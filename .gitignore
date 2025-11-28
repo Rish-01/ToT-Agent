@@ -1,0 +1,16 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.env/
+.venv/
+venv/
+env/
+
+# Python build artifacts (optional but common)
+*.egg-info/
+dist/
+build/
