@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 
 load_dotenv()  # loads variables from .env
 MY_API_TOKEN = os.environ.get("HF_TOKEN")  # read from environment variable
-print(MY_API_TOKEN)
 
 client = InferenceClient(api_key=MY_API_TOKEN)
 
@@ -101,7 +100,7 @@ def run_symbolic_llm(question, options):
 
 def llm_logiQA():
     
-    dataset = load_dataset("logiqa", "main", streaming=True)
+    dataset = load_dataset("yiyanghkust/LogiQA", streaming=True)
     test_stream = dataset["test"]
     correct = 0
     total = 0
@@ -125,6 +124,57 @@ def llm_logiQA():
         if total >= 10:
             break
     accuracy = correct/total
-    print("Symbolic baseline accuracy: accuracy")
+    print("Symbolic baseline accuracy: ", accuracy)
 
-llm_logiQA()
+def run_commonsense_llm(question, options):
+    prompt = (
+        "Answer the following commonsense reasoning question:\n\n"
+        f"Question: {question}\n"
+        f"Options: {', '.join(options)}\n"
+        "Answer with the letter of the correct option only:"
+    )
+
+    response = client.chat.completions.create(
+        model=model_name,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=64,
+        temperature=0.0,
+    )
+
+    return response.choices[0].message["content"].strip()
+
+
+def llm_ARC():
+    # Use ARC-Challenge for evaluation (hard benchmark)
+    dataset = load_dataset("allenai/ai2_arc", "ARC-Challenge", streaming=True)
+    test_stream = dataset["test"]
+
+    correct = 0
+    total = 0
+
+    for item in tqdm(test_stream):
+        q = item["question"]
+        option_labels = item["choices"]["label"]
+        option_texts = item["choices"]["text"]
+        gold = item["answerKey"].strip().upper()
+
+        # Create combined options like "A. Text"
+        options = [f"{lbl}. {txt}" for lbl, txt in zip(option_labels, option_texts)]
+        # print("RAW model output:", run_commonsense_llm(q, options))
+        pred = run_commonsense_llm(q, options).upper()
+
+        print("Gold:", gold)
+        print("Pred:", pred)
+
+        if pred == gold:
+            correct += 1
+            print("Correct!")
+
+        total += 1
+
+        # if total >= 10:
+        #     break
+
+    accuracy = correct / total
+    print("ARC baseline accuracy:", accuracy)
+
