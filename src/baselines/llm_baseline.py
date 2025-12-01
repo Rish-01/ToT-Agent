@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()  # loads variables from .env
 # MY_API_TOKEN = os.environ.get("HF_TOKEN")  # read from environment variable
 
-from google import genai
+import google.genai as genai
 
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -93,62 +93,9 @@ def llm_gsm8k():
     accuracy = correct / total
     print("GSM8k baseline accuracy:", accuracy)
 
-print("GSM8K: --------------------------------------------------------")
-llm_gsm8k()
+# print("GSM8K: --------------------------------------------------------")
+# llm_gsm8k()
 
-def extract_number_from_text(text):
-    # Look for boxed answers
-    m = re.search(r"\\boxed\{([0-9.+\-*/()]+)\}", text)
-    if m:
-        return m.group(1)
-
-    # Look for phrases like "Final Answer: 10" or "Answer: 10"
-    m = re.search(r"(Final Answer|Answer)\s*[:\- ]+\s*([0-9.+\-*/()]+)", text, re.IGNORECASE)
-    if m:
-        return m.group(2)
-
-    # Look for standalone last number in the text
-    m = re.findall(r"([0-9]+(?:\.[0-9]+)?)", text)
-    if m:
-        return m[-1]  # return the last number mentioned
-
-    return None
-
-    
-def llm_MATH():
-
-    # Load dataset
-    dataset = load_dataset("EleutherAI/hendrycks_math", "algebra", streaming=True)
-    test_stream = dataset["test"]
-
-    # Evaluate: 
-    correct = 0
-    total = 0
-    # subset = test.select(range(10))  # selects first 10 rows for testing
-    for item in tqdm(test_stream):
-        q = item["problem"]
-        gold = item["solution"].strip()
-        pred = run_math_llm(q)
-
-        gold_num = extract_number_from_text(gold)
-        pred_num = extract_number_from_text(pred)
-
-        print("Gold: ", gold_num)
-        print("Pred: ", pred_num)
-        if gold_num is not None and pred_num is not None and gold_num == pred_num:
-            correct += 1
-            # print("yupppppppppppppppppppp")
-            
-        total += 1
-        
-        if total >= 10:
-            break
-
-    accuracy = correct / total
-    print("MATH baseline accuracy:", accuracy)
-
-print("MATH: ----------------------------------------------------------")
-llm_MATH()
 
 
 def run_commonsense_llm(question, options):
@@ -190,16 +137,16 @@ def llm_ARC():
         q = item["question"]
         option_labels = item["choices"]["label"]
         option_texts = item["choices"]["text"]
-        gold = item["answerKey"].strip().upper()
-
+        gold_raw = item["answerKey"]
+        gold = gold_raw.strip().upper()
         # Create combined options like "A. Text"
         options = [f"{lbl}. {txt}" for lbl, txt in zip(option_labels, option_texts)]
         # print("RAW model output:", run_commonsense_llm(q, options))
         raw_pred = run_commonsense_llm(q, options)
         pred = extract_option_letter(raw_pred)
 
-        print("Gold:", gold)
-        print("Pred:", pred)
+        # print("Gold:", gold_raw)
+        # print("Pred:", raw_pred)
 
         if pred == gold:
             correct += 1
@@ -211,10 +158,10 @@ def llm_ARC():
             break
 
     accuracy = correct / total
-    print("ARC baseline accuracyi9:", accuracy)
+    print("ARC baseline accuracy:", accuracy)
 
-print("ARC: --------------------------------------------------------------")
-llm_ARC()
+# print("ARC: --------------------------------------------------------------")
+# llm_ARC()
 
 def run_knowledge_llm1(question):
     prompt = (
@@ -227,6 +174,35 @@ def run_knowledge_llm1(question):
     )
     return safe_text(response).strip()
 
+def normalize(text):
+    text = text.lower()
+    text = text.strip()
+    text = re.sub(r"[^\w\s]", "", text)   # remove punctuation
+    text = re.sub(r"\s+", " ", text)      # collapse spaces
+    return text
+
+def hotpotqa_match(gold, pred):
+    gold_norm = normalize(gold)
+    pred_norm = normalize(pred)
+    print("Gold_norm: ", gold_norm)
+    print("Pred norm: ", pred_norm)
+    # exact match
+    if gold_norm == pred_norm:
+        return True
+
+    # substring match
+    if gold_norm in pred_norm:
+        return True
+
+    # token overlap: if ≥50% of gold tokens appear in prediction
+    gold_tokens = set(gold_norm.split())
+    pred_tokens = set(pred_norm.split())
+    overlap = len(gold_tokens & pred_tokens) / len(gold_tokens)
+    if overlap >= 0.5:
+        return True
+
+    return False
+
 
 def llm_HotPotQA():
     # Load dataset (validation split, streaming)
@@ -238,16 +214,18 @@ def llm_HotPotQA():
     for item in tqdm(dataset):
 
         q = item["question"]
-        gold = item["answer"].strip().lower()
+        gold_raw = item["answer"]
+        # gold = gold_raw.strip().lower()
 
-        pred = run_knowledge_llm1(q).strip().lower()
+        pred_raw = run_knowledge_llm1(q)
+        # pred = pred_raw.strip().lower()
 
-        print("Gold:", gold)
-        print("Pred:", pred)
+        print("Gold:", gold_raw)
+        print("Pred:", pred_raw)
 
         # SIMPLE SCORING: exact or substring match
         # (Exact match is too strict for free-text LLM answers)
-        if gold in pred or pred in gold:
+        if hotpotqa_match(gold_raw, pred_raw):
             correct += 1
             print("Correct!")
 
@@ -300,8 +278,8 @@ def llm_MMLU():
         pred = extract_option_letter(raw_pred)
 
 
-        print("Gold:", gold_letter)
-        print("Pred:", pred)
+        # print("Gold:", gold_index)
+        # print("Pred:", raw_pred)
 
         if pred == gold_letter:
             correct += 1
@@ -315,5 +293,5 @@ def llm_MMLU():
     accuracy = correct / total
     print("MMLU baseline accuracy:", accuracy)
 
-print("MMLU: ------------------------------------------------------------------")
-llm_MMLU()
+# print("MMLU: ------------------------------------------------------------------")
+# llm_MMLU()
