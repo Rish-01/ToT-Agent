@@ -26,7 +26,7 @@ def safe_text(response):
         return ""
 
 
-def run_math_llm(question):
+def run_math_llm1(question):
     prompt = (
         "Answer the following grade-school math problem.\n\n"
         f"Question: {question}\n"
@@ -68,7 +68,7 @@ def llm_gsm8k():
         q = item["question"]
         gold = item["answer"].strip()
 
-        pred = run_math_llm(q)
+        pred = run_math_llm1(q)
 
         # extract gold number and normalize
         gold_number = re.search(r"####\s*([0-9,.\-]+)", gold).group(1)
@@ -78,24 +78,122 @@ def llm_gsm8k():
         answer = extract_answer_portion(pred)
         pred_norm = re.sub(r"[0-9,.\-]+", lambda m: normalize_number_str(m.group(0)), answer)
 
-
+        # print("Gold Reg: ", gold)
+        # print("Pred Reg: ", pred)
         # print("Gold: ", gold_number_norm)
         # print("Pred: ", pred_norm)
         if gold_number_norm in pred_norm:
+            correct += 1
+            # print("yupppppppppppp")
+            
+        total += 1
+        
+        if total >= 20:
+            break
+
+    accuracy = correct / total
+    # print("GSM8k baseline accuracy:", accuracy)
+    return accuracy
+
+# print("GSM8K: --------------------------------------------------------")
+# llm_gsm8k()
+
+from fractions import Fraction
+import re
+
+def extract_math_answer(text):
+    """
+    Extracts the answer from a math LLM output or gold solution.
+    Handles:
+    1) \boxed{...}
+    2) **Answer:** ...
+    3) Final Answer: The final answer is ...
+    Returns a string or None.
+    """
+
+    # Look for \boxed{...} first
+    m = re.search(r"\\boxed\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}", text)
+    if m:
+        ans = m.group(1).strip()
+        # unify \dfrac and \frac
+        ans = ans.replace(r"\dfrac", r"\frac")
+        return ans
+
+    # Look for Final Answer: The final answer is ...
+    m = re.search(r"Final Answer\s*:\s*The final answer is\s*(.+)", text, re.IGNORECASE)
+    if m:
+        ans = m.group(1).strip()
+        ans = ans.replace(r"\dfrac", r"\frac")
+        return ans
+
+    # fallback: maybe just a number at the end
+    m = re.findall(r"([0-9]+(?:/[0-9]+)?)", text)
+    if m:
+        return m[-1]
+
+    return None
+
+def compare_answers(gold, pred):
+    if gold is None or pred is None:
+        return False
+    # Remove spaces
+    gold_norm = gold.replace(" ", "")
+    pred_norm = pred.replace(" ", "")
+    return gold_norm == pred_norm
+
+def run_math_llm2(question):
+    prompt = (
+        "Answer the following grade-school math problem.\n\n"
+        f"Question: {question}\n\n"
+        "Please respond in the following format after you think and explain, this should be the last line:\n"
+        "Final Answer: The final answer is \\boxed{your_answer_here}\n"
+    )
+    response = client.models.generate_content(
+        model="gemma-3-27b-it",
+        contents=prompt
+    )
+    return safe_text(response).strip()
+
+
+    
+def llm_math():
+
+    # Load dataset
+    dataset = load_dataset("EleutherAI/hendrycks_math", "algebra", streaming=True)
+    test_stream = dataset["test"]
+
+    # Evaluate: 
+    correct = 0
+    total = 0
+    # subset = test.select(range(10))  # selects first 10 rows for testing
+    for item in tqdm(test_stream):
+        q = item["problem"]
+        gold = item["solution"].strip()
+        pred = run_math_llm2(q)
+        
+        # print("Gold: ", gold)
+        # print("Pred: ", pred)
+
+        gold_num = extract_math_answer(gold)
+        pred_num = extract_math_answer(pred)
+
+        # print("Gold Num: ", gold_num)
+        # print("Pred Num: ", pred_num)
+        if compare_answers(gold_num, pred_num):
             correct += 1
             # print("yupppppppppppppppppppp")
             
         total += 1
         
-        if total >= 10:
+        if total >= 20:
             break
 
     accuracy = correct / total
-    print("GSM8k baseline accuracy:", accuracy)
+    # print("MATH baseline accuracy:", accuracy)
+    return accuracy
 
-# print("GSM8K: --------------------------------------------------------")
-# llm_gsm8k()
-
+# print("MATH: ----------------------------------------------------------")
+# llm_math()
 
 
 def run_commonsense_llm(question, options):
@@ -145,20 +243,23 @@ def llm_ARC():
         raw_pred = run_commonsense_llm(q, options)
         pred = extract_option_letter(raw_pred)
 
-        # print("Gold:", gold_raw)
-        # print("Pred:", raw_pred)
+        # print("Gold RAW:", gold_raw)
+        # print("Pred RAW:", raw_pred)
+        # print("Gold: ", gold)
+        # print("Pred: ", pred)
 
         if pred == gold:
             correct += 1
-            print("Correct!")
+            # print("Correct!")
 
         total += 1
 
-        if total >= 10:
+        if total >= 20:
             break
 
     accuracy = correct / total
-    print("ARC baseline accuracy:", accuracy)
+    # print("ARC baseline accuracy:", accuracy)
+    return accuracy
 
 # print("ARC: --------------------------------------------------------------")
 # llm_ARC()
@@ -207,11 +308,11 @@ def hotpotqa_match(gold, pred):
 def llm_HotPotQA():
     # Load dataset (validation split, streaming)
     dataset = load_dataset("hotpotqa/hotpot_qa", "distractor", split="validation", streaming=True)
-    
+    test_stream = dataset
     correct = 0
     total = 0
 
-    for item in tqdm(dataset):
+    for item in tqdm(test_stream):
 
         q = item["question"]
         gold_raw = item["answer"]
@@ -220,26 +321,27 @@ def llm_HotPotQA():
         pred_raw = run_knowledge_llm1(q)
         # pred = pred_raw.strip().lower()
 
-        print("Gold:", gold_raw)
-        print("Pred:", pred_raw)
+        # print("Gold:", gold_raw)
+        # print("Pred:", pred_raw)
 
         # SIMPLE SCORING: exact or substring match
         # (Exact match is too strict for free-text LLM answers)
         if hotpotqa_match(gold_raw, pred_raw):
             correct += 1
-            print("Correct!")
+            # print("Correct!")
 
         total += 1
 
         # keep this for fast testing if needed
-        if total >= 10:
+        if total >= 20:
             break
 
     accuracy = correct / total
-    print("HotPotQA baseline accuracy:", accuracy)
+    # print("HotPotQA baseline accuracy:", accuracy)
+    return accuracy
     
-print("hotpotqa: ----------------------------------------------------------------")
-llm_HotPotQA()
+# print("hotpotqa: ----------------------------------------------------------------")
+# llm_HotPotQA()
 
 def run_knowledge_llm2(question, options):
     prompt = (
@@ -283,15 +385,42 @@ def llm_MMLU():
 
         if pred == gold_letter:
             correct += 1
-            print("Correct!")
+            # print("Correct!")
 
         total += 1
 
-        if total >= 10:
+        if total >= 20:
             break
 
     accuracy = correct / total
-    print("MMLU baseline accuracy:", accuracy)
+    # print("MMLU baseline accuracy:", accuracy)
+    return accuracy
 
 # print("MMLU: ------------------------------------------------------------------")
 # llm_MMLU()
+
+# Results table
+
+def results_table():
+    results = {}
+
+    results["GSM8k"] = llm_gsm8k()
+    results["MATH"] = llm_math()
+    results["ARC"] = llm_ARC()
+    results["HotPotQA"] = llm_HotPotQA()
+    results["MMLU"] = llm_MMLU()
+
+    datasets = ["GSM8k", "ARC", "HotPotQA", "MMLU"]
+
+    print("\nEvaluation Results")
+    print("-" * 70)
+
+    header_row = " | ".join(f"{ds:^12}" for ds in datasets)
+    print(header_row)
+    print("-" * 70)
+
+    acc_row = " | ".join(f"{results[ds]:^12.2f}" for ds in datasets)
+    print(acc_row)
+    print("-" * 70)
+
+results_table()
