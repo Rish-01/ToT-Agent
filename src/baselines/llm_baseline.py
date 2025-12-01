@@ -56,6 +56,7 @@ def normalize_number_str(num_str):
 
 def llm_gsm8k():
 
+    print("Running gsm8k...")
     # Load dataset
     dataset = load_dataset("gsm8k", "main", streaming=True)
     test_stream = dataset["test"]
@@ -145,7 +146,7 @@ def run_math_llm2(question):
     prompt = (
         "Answer the following grade-school math problem.\n\n"
         f"Question: {question}\n\n"
-        "Please respond in the following format after you think and explain, this should be the last line:\n"
+        "Please respond in the following format:\n"
         "Final Answer: The final answer is \\boxed{your_answer_here}\n"
     )
     response = client.models.generate_content(
@@ -157,6 +158,8 @@ def run_math_llm2(question):
 
     
 def llm_math():
+    
+    print("Running MATH...")
 
     # Load dataset
     dataset = load_dataset("EleutherAI/hendrycks_math", "algebra", streaming=True)
@@ -224,6 +227,8 @@ def extract_option_letter(text):
 
 
 def llm_ARC():
+    print("Running ARC...")
+
     # Use ARC-Challenge for evaluation (hard benchmark)
     dataset = load_dataset("ai2_arc", "ARC-Easy", streaming=True)
     test_stream = dataset["test"]
@@ -285,8 +290,8 @@ def normalize(text):
 def hotpotqa_match(gold, pred):
     gold_norm = normalize(gold)
     pred_norm = normalize(pred)
-    print("Gold_norm: ", gold_norm)
-    print("Pred norm: ", pred_norm)
+    # print("Gold_norm: ", gold_norm)
+    # print("Pred norm: ", pred_norm)
     # exact match
     if gold_norm == pred_norm:
         return True
@@ -306,6 +311,9 @@ def hotpotqa_match(gold, pred):
 
 
 def llm_HotPotQA():
+    
+    print("Running hotpotQA...")
+
     # Load dataset (validation split, streaming)
     dataset = load_dataset("hotpotqa/hotpot_qa", "distractor", split="validation", streaming=True)
     test_stream = dataset
@@ -358,6 +366,8 @@ def run_knowledge_llm2(question, options):
 
 
 def llm_MMLU():
+    print("Running MMLU...")
+
     dataset = load_dataset("cais/mmlu", "all", split="validation", streaming=True)
     test_stream = dataset
 
@@ -393,7 +403,7 @@ def llm_MMLU():
             break
 
     accuracy = correct / total
-    # print("MMLU baseline accuracy:", accuracy)
+    print("MMLU baseline accuracy:", accuracy)
     return accuracy
 
 # print("MMLU: ------------------------------------------------------------------")
@@ -410,9 +420,9 @@ def results_table():
     results["HotPotQA"] = llm_HotPotQA()
     results["MMLU"] = llm_MMLU()
 
-    datasets = ["GSM8k", "ARC", "HotPotQA", "MMLU"]
+    datasets = ["GSM8k", "MATH", "ARC", "HotPotQA", "MMLU"]
 
-    print("\nEvaluation Results")
+    print("\nPerformance for LLMs Without Reasoning on 5 Datasets")
     print("-" * 70)
 
     header_row = " | ".join(f"{ds:^12}" for ds in datasets)
