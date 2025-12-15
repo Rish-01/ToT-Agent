@@ -1,65 +1,60 @@
 import re
 from datasets import load_dataset
 
-def extract_answer_from_text(text: str) -> str:
-    """
-    Extracts the answer after 'Answer:' or returns the last sentence.
-    """
-    # 1. Look for "Answer: <content>"
-    if "Answer:" in text:
-        return text.split("Answer:")[-1].strip()
-    
-    # 2. Fallback: Look for "The answer is <content>"
-    if "The answer is" in text:
-        return text.split("The answer is")[-1].strip()
-    
-    # 3. Fallback: Return the last non-empty line
-    lines = [line.strip() for line in text.split('\n') if line.strip()]
-    return lines[-1] if lines else ""
+from typing import Optional
 
-def normalize_answer(s: str) -> str:
-    """
-    Lowercases, removes trailing punctuation, and handles currency/formatting.
-    """
-    if not s: return ""
-    s = s.lower().strip()
-    # Remove final punctuation
-    if s and s[-1] in ".,;:!?":
-        s = s[:-1]
-    # Remove commas from numbers (e.g. 1,000 -> 1000)
-    s = s.replace(",", "")
-    # Remove currency symbols
-    s = s.replace("$", "")
+def extract_answer_from_text(text: str) -> str:
+    """Robust heuristic to find the answer in model output."""
+    if not text: return ""
+    
+    # 1. Prefer Boxed (Strongest signal for Math)
+    boxed = extract_boxed_content(text)
+    if boxed: return boxed
+
+    # 2. Explicit 'Final Answer' or 'Answer' tags
+    finals = re.findall(r"Final Answer\s*[:\-]\s*(.+)", text, flags=re.I)
+    if finals: return finals[-1].splitlines()[0].strip()
+    
+    answers = re.findall(r"Answer\s*[:\-]\s*(.+)", text, flags=re.I)
+    if answers: return answers[-1].splitlines()[0].strip()
+
+    # 3. Multiple Choice Fallback (A-E at end of text)
+    last_block = text[-100:] 
+    m = re.findall(r"\b([A-E])\b", last_block.upper())
+    if m: return m[-1]
+
+    # 4. Fallback: Last non-empty line
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    return lines[-1] if lines else text.strip()
+
+
+def normalize_answer(s: Optional[str]) -> str:
+    """Standardizes answer string for comparison."""
+    if s is None:
+        return ""
+    s = str(s).lower().strip()
+    s = re.sub(r"\\boxed\{(.+?)\}", r"\1", s)
+    s = re.sub(r"[^a-z0-9\s\-\.\,]", " ", s)
+    s = re.sub(r"\s+", " ", s)
     return s.strip()
 
 def extract_boxed_content(text: str) -> str:
-    """
-    Extracts content inside \boxed{...}. Handles nested braces.
-    """
-    idx = text.find("\\boxed{")
-    if idx == -1:
-        return None
-    
-    # Start looking after \boxed{
-    idx += 7 
-    balance = 1
-    content = []
-    
-    for char in text[idx:]:
-        if char == '{':
-            balance += 1
-        elif char == '}':
-            balance -= 1
-        
-        if balance == 0:
-            break
-        content.append(char)
-        
-    return "".join(content)
+    """Extracts content inside \boxed{...}."""
+    if not text: return ""
+    idxs = [m.start() for m in re.finditer(r"\\boxed\{", text)]
+    if not idxs: return ""
+    start = idxs[-1] + len("\\boxed{")
+    cnt = 1
+    end = start
+    while end < len(text) and cnt > 0:
+        if text[end] == '{': cnt += 1
+        elif text[end] == '}': cnt -= 1
+        end += 1
+    return text[start:end-1]
 
 class DatasetUtils:
     @staticmethod
-    def load_and_prep_dataset(dataset_name, config=None, split="validation", max_samples=None):
+    def load_and_prep_dataset(dataset_name, config=None, split="validation", max_samples=None, seed=42):
         """
         Loads the dataset and optionally selects a subset for testing.
         """
@@ -72,6 +67,7 @@ class DatasetUtils:
                  pass
 
             ds = load_dataset(dataset_name, config, split=split)
+            ds = ds.shuffle(seed=seed)
             
             if max_samples:
                 # Select the first N samples
@@ -165,69 +161,38 @@ class DatasetUtils:
 
         if "gsm8k" in name:
             def eval_gsm8k(item, pred_text: str) -> int:
-                # 1. Parse GOLD (Use #### delimiter)
-                gold_raw = item.get("answer", "")
-                if "####" in gold_raw:
-                    gold_str = gold_raw.split("####")[-1].strip()
-                else:
-                    gold_str = gold_raw
+                gold = item.get("answer", "")
+                gold_num = re.findall(r"-?\d+\.?\d*", gold.replace(",", ""))
+                gold_num = gold_num[-1] if gold_num else ""
                 
-                # 2. Parse PREDICTION
-                pred_str = extract_answer_from_text(pred_text)
-
-                # 3. Numeric Extraction
-                # Remove commas to ensure 1,000 parses as 1000
-                gold_nums = re.findall(r"-?\d+\.?\d*", gold_str.replace(",", ""))
-                pred_nums = re.findall(r"-?\d+\.?\d*", pred_str.replace(",", ""))
+                pred = extract_answer_from_text(pred_text)
+                pred_num = re.findall(r"-?\d+\.?\d*", pred.replace(",", ""))
+                pred_num = pred_num[-1] if pred_num else ""
                 
-                gold_val = float(gold_nums[-1]) if gold_nums else None
-                pred_val = float(pred_nums[-1]) if pred_nums else None
-
-                # 4. Compare
-                # A: Float Equality
-                if gold_val is not None and pred_val is not None:
-                    if abs(gold_val - pred_val) < 1e-6:
-                        return 1
-                
-                # B: String Normalization fallback (for non-numeric answers)
-                return int(normalize_answer(pred_str) == normalize_answer(gold_str))
-            
+                try:
+                    return int(float(pred_num) == float(gold_num))
+                except:
+                    return int(normalize_answer(pred) == normalize_answer(gold))
             return eval_gsm8k
         
         # --- MATH Evaluator ---
         elif "math" in name or "hendrycks" in name:
             def eval_math(item, pred_text: str) -> int:
                 gold_full = item.get("solution") or item.get("answer") or ""
-            
-                # 1. Parse GOLD (Prioritize \boxed)
                 gold_ans = extract_boxed_content(gold_full)
-                if not gold_ans:
-                    # Fallback for MATH: usually the answer is widely accepted as the last part
-                    gold_ans = gold_full.split("\n")[-1]
-
-                # 2. Parse PREDICTION
+                if not gold_ans: gold_ans = gold_full.split("\n")[-1]
+                
                 pred_ans = extract_answer_from_text(pred_text)
                 
-                # 3. Compare Normalized Strings (Exact Match)
-                if normalize_answer(pred_ans) == normalize_answer(gold_ans):
-                    return 1
-                    
-                # 4. Compare Numeric Values (if both are numbers)
+                if normalize_answer(pred_ans) == normalize_answer(gold_ans): return 1
                 try:
-                    g_nums = re.findall(r"-?\d+\.?\d*", gold_ans.replace(",", ""))
-                    p_nums = re.findall(r"-?\d+\.?\d*", pred_ans.replace(",", ""))
-                    
-                    if g_nums and p_nums:
-                        # Compare the last numbers found in the boxed/extracted text
-                        g_val = float(g_nums[-1])
-                        p_val = float(p_nums[-1])
-                        return int(abs(g_val - p_val) < 1e-6)
+                    g_val = float(re.findall(r"-?\d+\.?\d*", gold_ans)[0])
+                    p_val = float(re.findall(r"-?\d+\.?\d*", pred_ans)[0])
+                    return int(abs(g_val - p_val) < 1e-6)
                 except:
-                    pass
-
-                return 0
-            
+                    return 0
             return eval_math
+
         
         # --- HotpotQA Evaluator ---
         elif "hotpot" in name:
