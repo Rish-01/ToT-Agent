@@ -54,18 +54,23 @@ def normalize_number_str(num_str):
     """
     return re.sub(r"[^\d]", "", num_str)
 
-def llm_gsm8k():
+def llm_gsm8k(seed, max_samples=30):
 
-    print("Running gsm8k...")
+    print("Running gsm8k with seed = {seed}...")
     # Load dataset
-    dataset = load_dataset("gsm8k", "main", streaming=True)
-    test_stream = dataset["test"]
+    ds = load_dataset("gsm8k", "main", split="test")
+    ds = ds.shuffle(seed = seed)
+    
+    if max_samples:
+        n = min(len(ds), max_samples)
+        ds = ds.select(range(n))
+    
 
     # Evaluate: 
     correct = 0
     total = 0
     # subset = test.select(range(10))  # selects first 10 rows for testing
-    for item in tqdm(test_stream):
+    for item in tqdm(ds):
         q = item["question"]
         gold = item["answer"].strip()
 
@@ -79,25 +84,32 @@ def llm_gsm8k():
         answer = extract_answer_portion(pred)
         pred_norm = re.sub(r"[0-9,.\-]+", lambda m: normalize_number_str(m.group(0)), answer)
 
-        # print("Gold Reg: ", gold)
-        # print("Pred Reg: ", pred)
-        # print("Gold: ", gold_number_norm)
-        # print("Pred: ", pred_norm)
+        print("Gold Reg: ", gold)
+        print("Pred Reg: ", pred)
+        print("Gold: ", gold_number_norm)
+        print("Pred: ", pred_norm)
         if gold_number_norm in pred_norm:
             correct += 1
-            # print("yupppppppppppp")
+            print("yupppppppppppp")
             
         total += 1
-        
-        if total >= 20:
-            break
 
     accuracy = correct / total
     # print("GSM8k baseline accuracy:", accuracy)
     return accuracy
 
 # print("GSM8K: --------------------------------------------------------")
-# llm_gsm8k()
+# seeds = [41, 42, 43]
+# accuracies = []
+
+# for seed in seeds:
+#     acc = llm_gsm8k(seed=seed, max_samples=30)
+#     accuracies.append(acc)
+
+# avg_acc = sum(accuracies) / len(accuracies)
+# print("Per-seed accuracies:", accuracies)
+# print("Average accuracy:", avg_acc)
+
 
 from fractions import Fraction
 import re
@@ -157,19 +169,24 @@ def run_math_llm2(question):
 
 
     
-def llm_math():
+def llm_math(seed, max_samples=30):
     
     print("Running MATH...")
 
     # Load dataset
-    dataset = load_dataset("EleutherAI/hendrycks_math", "algebra", streaming=True)
-    test_stream = dataset["test"]
+    ds = load_dataset("EleutherAI/hendrycks_math", "algebra", split="test")
+    ds = ds.shuffle(seed = seed)
+    
+    if max_samples:
+        n = min(len(ds), max_samples)
+        ds = ds.select(range(n))
+    
 
     # Evaluate: 
     correct = 0
     total = 0
     # subset = test.select(range(10))  # selects first 10 rows for testing
-    for item in tqdm(test_stream):
+    for item in tqdm(ds):
         q = item["problem"]
         gold = item["solution"].strip()
         pred = run_math_llm2(q)
@@ -180,23 +197,29 @@ def llm_math():
         gold_num = extract_math_answer(gold)
         pred_num = extract_math_answer(pred)
 
-        # print("Gold Num: ", gold_num)
-        # print("Pred Num: ", pred_num)
+        print("Gold Num: ", gold_num)
+        print("Pred Num: ", pred_num)
         if compare_answers(gold_num, pred_num):
             correct += 1
-            # print("yupppppppppppppppppppp")
+            print("yupppppppppppppppppppp")
             
         total += 1
-        
-        if total >= 20:
-            break
 
     accuracy = correct / total
     # print("MATH baseline accuracy:", accuracy)
     return accuracy
 
 # print("MATH: ----------------------------------------------------------")
-# llm_math()
+# seeds = [41, 42, 43]
+# accuracies = []
+
+# for seed in seeds:
+#     acc = llm_math(seed=seed, max_samples=30)
+#     accuracies.append(acc)
+
+# avg_acc = sum(accuracies) / len(accuracies)
+# print("Per-seed accuracies:", accuracies)
+# print("Average accuracy:", avg_acc)
 
 
 def run_commonsense_llm(question, options):
@@ -226,17 +249,21 @@ def extract_option_letter(text):
 
 
 
-def llm_ARC():
+def llm_ARC(seed, max_samples=30):
     print("Running ARC...")
 
     # Use ARC-Challenge for evaluation (hard benchmark)
-    dataset = load_dataset("ai2_arc", "ARC-Easy", streaming=True)
-    test_stream = dataset["test"]
+    ds = load_dataset("ai2_arc", "ARC-Easy", split="test")
+    ds = ds.shuffle(seed = seed)
+    
+    if max_samples:
+        n = min(len(ds), max_samples)
+        ds = ds.select(range(n))
 
     correct = 0
     total = 0
 
-    for item in tqdm(test_stream):
+    for item in tqdm(ds):
         q = item["question"]
         option_labels = item["choices"]["label"]
         option_texts = item["choices"]["text"]
@@ -250,8 +277,8 @@ def llm_ARC():
 
         # print("Gold RAW:", gold_raw)
         # print("Pred RAW:", raw_pred)
-        # print("Gold: ", gold)
-        # print("Pred: ", pred)
+        print("Gold: ", gold)
+        print("Pred: ", pred)
 
         if pred == gold:
             correct += 1
@@ -259,15 +286,22 @@ def llm_ARC():
 
         total += 1
 
-        if total >= 20:
-            break
-
     accuracy = correct / total
     # print("ARC baseline accuracy:", accuracy)
     return accuracy
 
 # print("ARC: --------------------------------------------------------------")
-# llm_ARC()
+# seeds = [41, 42, 43]
+# accuracies = []
+
+# for seed in seeds:
+#     acc = llm_ARC(seed=seed, max_samples=30)
+#     accuracies.append(acc)
+
+# avg_acc = sum(accuracies) / len(accuracies)
+# print("Per-seed accuracies:", accuracies)
+# print("Average accuracy:", avg_acc)
+
 
 def run_knowledge_llm1(question):
     prompt = (
@@ -310,17 +344,22 @@ def hotpotqa_match(gold, pred):
     return False
 
 
-def llm_HotPotQA():
+def llm_HotPotQA(seed, max_samples=30):
     
     print("Running hotpotQA...")
 
     # Load dataset (validation split, streaming)
-    dataset = load_dataset("hotpotqa/hotpot_qa", "distractor", split="validation", streaming=True)
-    test_stream = dataset
+    ds = load_dataset("hotpotqa/hotpot_qa", "distractor", split="validation")
+    ds = ds.shuffle(seed = seed)
+    
+    if max_samples:
+        n = min(len(ds), max_samples)
+        ds = ds.select(range(n))
+
     correct = 0
     total = 0
 
-    for item in tqdm(test_stream):
+    for item in tqdm(ds):
 
         q = item["question"]
         gold_raw = item["answer"]
@@ -329,27 +368,35 @@ def llm_HotPotQA():
         pred_raw = run_knowledge_llm1(q)
         # pred = pred_raw.strip().lower()
 
-        # print("Gold:", gold_raw)
-        # print("Pred:", pred_raw)
+        print("Gold:", gold_raw)
+        print("Pred:", pred_raw)
 
         # SIMPLE SCORING: exact or substring match
         # (Exact match is too strict for free-text LLM answers)
         if hotpotqa_match(gold_raw, pred_raw):
             correct += 1
-            # print("Correct!")
+            print("Correct!")
 
         total += 1
-
-        # keep this for fast testing if needed
-        if total >= 20:
-            break
 
     accuracy = correct / total
     # print("HotPotQA baseline accuracy:", accuracy)
     return accuracy
     
 # print("hotpotqa: ----------------------------------------------------------------")
-# llm_HotPotQA()
+# seeds = [41, 42, 43]
+# accuracies = []
+
+# for seed in seeds:
+#     acc = llm_HotPotQA(seed=seed, max_samples=30)
+#     accuracies.append(acc)
+
+# avg_acc = sum(accuracies) / len(accuracies)
+# print("Per-seed accuracies:", accuracies)
+# print("Average accuracy:", avg_acc)
+
+
+
 
 def run_knowledge_llm2(question, options):
     prompt = (
@@ -365,16 +412,20 @@ def run_knowledge_llm2(question, options):
     return safe_text(response).strip()
 
 
-def llm_MMLU():
+def llm_MMLU(seed, max_samples=30):
     print("Running MMLU...")
-
-    dataset = load_dataset("cais/mmlu", "all", split="validation", streaming=True)
-    test_stream = dataset
+    
+    ds = load_dataset("cais/mmlu", "all", split="validation")
+    ds = ds.shuffle(seed = seed)
+    
+    if max_samples:
+        n = min(len(ds), max_samples)
+        ds = ds.select(range(n))
 
     correct = 0
     total = 0
 
-    for item in tqdm(test_stream):
+    for item in tqdm(ds):
         q = item["question"]
         option_texts = item["choices"]
         gold_index = int(item["answer"])     # 0, 1, 2, 3
@@ -390,47 +441,65 @@ def llm_MMLU():
         pred = extract_option_letter(raw_pred)
 
 
-        # print("Gold:", gold_index)
-        # print("Pred:", raw_pred)
+        print("Gold:", gold_index)
+        print("Pred:", raw_pred)
 
         if pred == gold_letter:
             correct += 1
-            # print("Correct!")
+            print("Correct!")
 
         total += 1
 
-        if total >= 20:
-            break
-
     accuracy = correct / total
-    print("MMLU baseline accuracy:", accuracy)
+    # print("MMLU baseline accuracy:", accuracy)
     return accuracy
 
 # print("MMLU: ------------------------------------------------------------------")
-# llm_MMLU()
+# seeds = [41, 42, 43]
+# accuracies = []
+
+# for seed in seeds:
+#     acc = llm_MMLU(seed=seed, max_samples=30)
+#     accuracies.append(acc)
+
+# avg_acc = sum(accuracies) / len(accuracies)
+# print("Per-seed accuracies:", accuracies)
+# print("Average accuracy:", avg_acc)
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Results table
 
-def results_table():
-    results = {}
+# def results_table():
+#     results = {}
 
-    results["GSM8k"] = llm_gsm8k()
-    results["MATH"] = llm_math()
-    results["ARC"] = llm_ARC()
-    results["HotPotQA"] = llm_HotPotQA()
-    results["MMLU"] = llm_MMLU()
+#     results["GSM8k"] = llm_gsm8k()
+#     results["MATH"] = llm_math()
+#     results["ARC"] = llm_ARC()
+#     results["HotPotQA"] = llm_HotPotQA()
+#     results["MMLU"] = llm_MMLU()
 
-    datasets = ["GSM8k", "MATH", "ARC", "HotPotQA", "MMLU"]
+#     datasets = ["GSM8k", "MATH", "ARC", "HotPotQA", "MMLU"]
 
-    print("\nPerformance for LLMs Without Reasoning on 5 Datasets")
-    print("-" * 70)
+#     print("\nPerformance for LLMs Without Reasoning on 5 Datasets")
+#     print("-" * 70)
 
-    header_row = " | ".join(f"{ds:^12}" for ds in datasets)
-    print(header_row)
-    print("-" * 70)
+#     header_row = " | ".join(f"{ds:^12}" for ds in datasets)
+#     print(header_row)
+#     print("-" * 70)
 
-    acc_row = " | ".join(f"{results[ds]:^12.2f}" for ds in datasets)
-    print(acc_row)
-    print("-" * 70)
+#     acc_row = " | ".join(f"{results[ds]:^12.2f}" for ds in datasets)
+#     print(acc_row)
+#     print("-" * 70)
 
-results_table()
+# results_table()
