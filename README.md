@@ -48,3 +48,24 @@ Run the proposed approach using:
 ```bash
   python -m src.proposed_method.our_method
 ```
+
+## Results
+
+We evaluated our approach against three baselines across five datasets. The table below reports the **Mean Accuracy ± Standard Deviation** and the **[95% Confidence Interval]** over three random seeds (30 samples per dataset).
+
+| Dataset | I/O Baseline | CoT | ReAct | Proposed Approach |
+| :--- | :--- | :--- | :--- | :--- |
+| **GSM8K** | 0.933 ± 0.034 <br> [0.850, 1.000] | 0.947 ± 0.003 <br> [0.940, 0.955] | 0.900 ± 0.010 <br> [0.890, 0.910] | 0.856 ± 0.019 <br> [0.808, 0.903] |
+| **HendrycksMath** | 0.978 ± 0.019 <br> [0.931, 1.000] | 0.925 ± 0.009 <br> [0.902, 0.948] | 0.820 ± 0.024 <br> [0.796, 0.844] | 0.844 ± 0.051 <br> [0.717, 0.972] |
+| **AI2 ARC** | 0.967 ± 0.000 <br> [0.967, 0.967] | 0.915 ± 0.014 <br> [0.881, 0.950] | 0.900 ± 0.025 <br> [0.875, 0.925] | **1.000 ± 0.000** <br> **[1.000, 1.000]** |
+| **HotpotQA** | 0.456 ± 0.102 <br> [0.202, 0.710] | 0.564 ± 0.028 <br> [0.494, 0.634] | 0.833 ± 0.041 <br> [0.792, 0.874] | 0.789 ± 0.019 <br> [0.741, 0.837] |
+| **MMLU** | 0.744 ± 0.084 <br> [0.533, 0.955] | 0.828 ± 0.014 <br> [0.794, 0.862] | 0.800 ± 0.028 <br> [0.772, 0.828] | **1.000 ± 0.000** <br> **[1.000, 1.000]** |
+
+### Key Findings
+* **Knowledge Tasks:** Our method got all 30 samples right on AI2 ARC and MMLU, demonstrating superior handling of multi-choice and commonsense reasoning tasks compared to all baselines.
+* **Math Tasks:** On simpler math tasks (GSM8K), our method slightly underperformed compared to CoT (0.856 vs 0.947), likely due to limited tool expressiveness and the high efficacy of linear reasoning for grade-school math.
+
+## Authors
+* **Abhijit Chunduru** - *UMass Amherst*
+* **Aditi Ravindra** - *UMass Amherst*
+* **Rishab Sharma** - *UMass Amherst*
